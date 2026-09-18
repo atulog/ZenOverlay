@@ -1,0 +1,1753 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="cyan">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>ZenOverlay | Advanced Telemetry Engine</title>
+    <style>
+        /* ---------------- THEME & DYNAMIC CSS VARIABLES ---------------- */
+        :root {
+            --bg-base: #040609;
+            --bg-surface: rgba(8, 12, 18, var(--hud-opacity, 0.88));
+            --bg-card: rgba(12, 18, 28, 0.88);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-dim: #64748b;
+            --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            
+            /* Accent Customization */
+            --accent: #00f0ff;
+            --accent-rgb: 0, 240, 255;
+            --accent-glow: rgba(0, 240, 255, calc(0.35 * var(--glow-mult, 1)));
+            --hud-opacity: 0.88;
+            --glow-mult: 1;
+        }
+
+        [data-theme="cyan"] {
+            --accent: #00f0ff;
+            --accent-rgb: 0, 240, 255;
+            --accent-glow: rgba(0, 240, 255, calc(0.35 * var(--glow-mult, 1)));
+        }
+        [data-theme="emerald"] {
+            --accent: #00ff88;
+            --accent-rgb: 0, 255, 136;
+            --accent-glow: rgba(0, 255, 136, calc(0.35 * var(--glow-mult, 1)));
+        }
+        [data-theme="crimson"] {
+            --accent: #ff2a5f;
+            --accent-rgb: 255, 42, 95;
+            --accent-glow: rgba(255, 42, 95, calc(0.35 * var(--glow-mult, 1)));
+        }
+        [data-theme="purple"] {
+            --accent: #a855f7;
+            --accent-rgb: 168, 85, 247;
+            --accent-glow: rgba(168, 85, 247, calc(0.35 * var(--glow-mult, 1)));
+        }
+        [data-theme="amber"] {
+            --accent: #f59e0b;
+            --accent-rgb: 245, 158, 11;
+            --accent-glow: rgba(245, 158, 11, calc(0.35 * var(--glow-mult, 1)));
+        }
+        [data-theme="stealth"] {
+            --accent: #ffffff;
+            --accent-rgb: 255, 255, 255;
+            --accent-glow: rgba(255, 255, 255, calc(0.25 * var(--glow-mult, 1)));
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        body, html {
+            background: var(--bg-base);
+            color: var(--text-main);
+            font-family: var(--font-stack);
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ---------------- ITEM 1: FUTURISTIC BACKGROUND ---------------- */
+        #bgCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .hud-radial-glow {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 750px;
+            height: 480px;
+            background: radial-gradient(ellipse at center, rgba(var(--accent-rgb), 0.14) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 2;
+            transition: background 0.4s ease;
+        }
+
+        .scanline-layer {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 3px, 6px 100%;
+            pointer-events: none;
+            z-index: 3;
+            opacity: 0.6;
+        }
+
+        /* ---------------- ITEM 5 & 6: TOP STATUS BAR & PULSE ---------------- */
+        .zen-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 64px;
+            padding: 0 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(180deg, rgba(4, 6, 9, 0.96) 0%, transparent 100%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            z-index: 50;
+        }
+
+        .header-brand {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo {
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+        }
+
+        .logo span {
+            color: var(--accent);
+            text-shadow: 0 0 14px var(--accent-glow);
+        }
+
+        .sys-telemetry-sub {
+            font-size: 9px;
+            font-family: monospace;
+            color: var(--text-dim);
+            letter-spacing: 0.05em;
+        }
+
+        .sys-telemetry-sub span {
+            color: var(--text-main);
+            margin-right: 12px;
+        }
+
+        .header-status-cluster {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            background: rgba(var(--accent-rgb), 0.08);
+            border: 1px solid rgba(var(--accent-rgb), 0.3);
+            font-size: 11px;
+            font-family: monospace;
+            color: var(--accent);
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        .pulse-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+            animation: pulseSystem 1.8s infinite cubic-bezier(0.4, 0, 0.6, 1);
+        }
+
+        @keyframes pulseSystem {
+            0%, 100% { opacity: 1; transform: scale(1); filter: drop-shadow(0 0 4px var(--accent)); }
+            50% { opacity: 0.35; transform: scale(0.85); filter: drop-shadow(0 0 1px var(--accent)); }
+        }
+
+        .menu-btn {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-glass);
+            border-radius: 6px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            padding: 10px;
+            transition: all 0.2s;
+        }
+
+        .menu-btn:hover {
+            border-color: var(--accent);
+            background: rgba(var(--accent-rgb), 0.1);
+        }
+
+        .menu-btn span {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: #fff;
+            border-radius: 2px;
+        }
+
+        /* ---------------- STAGE VIEWPORT ---------------- */
+        .stage-container {
+            position: absolute;
+            inset: 64px 0 0 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px 20px;
+            z-index: 10;
+        }
+
+        /* ---------------- ITEM 2 & 3: UPGRADED MAIN FPS CARD & CIRCULAR GAUGE ---------------- */
+        .hud-card {
+            width: 820px;
+            max-width: 95vw;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-glass);
+            border-radius: 14px;
+            padding: 20px 28px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), inset 0 0 24px rgba(255, 255, 255, 0.015);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            transition: transform 0.15s ease-out, border-color 0.3s, opacity 0.3s;
+            margin-top: auto;
+            margin-bottom: 8px;
+            position: relative;
+        }
+
+        .hud-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding-bottom: 10px;
+            margin-bottom: 14px;
+        }
+
+        .hud-profile-name {
+            color: var(--accent);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
+        .hud-gpu-tag {
+            color: var(--text-dim);
+            font-size: 10px;
+            font-family: monospace;
+            max-width: 380px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Circular Gauge Center */
+        .hero-fps-display {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 16px;
+        }
+
+        .fps-gauge-wrap {
+            position: relative;
+            width: 146px;
+            height: 146px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .gauge-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+
+        .gauge-track {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.06);
+            stroke-width: 4;
+        }
+
+        .gauge-fill {
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-dasharray: 408;
+            stroke-dashoffset: 408;
+            transition: stroke-dashoffset 0.15s ease-out, stroke 0.3s ease;
+            filter: drop-shadow(0 0 6px var(--accent));
+        }
+
+        .gauge-inner-data {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 5;
+        }
+
+        .live-tag-micro {
+            position: absolute;
+            top: -10px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 8px;
+            font-family: monospace;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+        }
+
+        .live-tag-micro-dot {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulseSystem 1.4s infinite;
+        }
+
+        .dominant-fps-num {
+            font-size: 50px;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -0.03em;
+            color: #fff;
+            text-shadow: 0 0 20px var(--accent-glow);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .fps-sub-label {
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.2em;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        /* 1% Low & Frametime Lateral Modules */
+        .secondary-metrics-block {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 240px;
+        }
+
+        .metric-split-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .sub-metric-tile {
+            background: rgba(4, 7, 11, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .sub-metric-name {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        .sub-metric-val {
+            font-size: 20px;
+            font-weight: 800;
+            color: #fff;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .sub-metric-unit {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-dim);
+            margin-left: 2px;
+        }
+
+        /* ---------------- ITEM 7 & 8: GRAPH & STABILITY TELEMETRY ---------------- */
+        .graph-panel {
+            background: rgba(4, 7, 11, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 8px;
+            padding: 10px 16px 12px;
+        }
+
+        .graph-top-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            font-family: monospace;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+
+        #frametimeCanvas {
+            width: 100%;
+            height: 56px;
+            display: block;
+        }
+
+        /* Performance Stability Strip */
+        .perf-stability-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+            padding-top: 8px;
+            margin-top: 8px;
+            font-size: 10px;
+            font-family: monospace;
+        }
+
+        .stability-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .stability-badge.stable {
+            color: var(--accent);
+            background: rgba(var(--accent-rgb), 0.1);
+        }
+
+        .stability-badge.warning {
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.12);
+        }
+
+        .stability-badge.critical {
+            color: #ff2a5f;
+            background: rgba(255, 42, 95, 0.15);
+        }
+
+        .stability-details {
+            color: var(--text-dim);
+        }
+
+        .stability-details strong {
+            color: var(--text-main);
+            margin-left: 3px;
+        }
+
+        /* ---------------- ITEM 10: ZEN MINIMAL MODE PILL ---------------- */
+        .zen-minimal-pill {
+            display: none;
+            background: rgba(8, 12, 18, 0.45);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 30px;
+            padding: 8px 18px;
+            align-items: center;
+            gap: 12px;
+            font-family: monospace;
+            backdrop-filter: blur(14px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6);
+            opacity: 0.55;
+            transition: all 0.25s ease;
+            cursor: pointer;
+            margin: auto;
+        }
+
+        .zen-minimal-pill:hover {
+            opacity: 1;
+            border-color: var(--accent);
+            box-shadow: 0 0 20px var(--accent-glow);
+            background: rgba(8, 12, 18, 0.85);
+            transform: scale(1.03);
+        }
+
+        .zen-pill-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        .zen-pill-fps {
+            font-size: 15px;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .zen-pill-ft {
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+
+        /* ---------------- ITEM 4: PREMIUM BOTTOM PRESET DECK ---------------- */
+        .bottom-shelf {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            margin-top: auto;
+        }
+
+        .deck-label-cluster {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .deck-label {
+            font-size: 9px;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            font-family: monospace;
+        }
+
+        .deck-indicator-bar {
+            width: 680px;
+            max-width: 90vw;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.05);
+            position: relative;
+            margin-bottom: 12px;
+            border-radius: 2px;
+        }
+
+        .deck-indicator-thumb {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 20%;
+            height: 100%;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+            border-radius: 2px;
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .card-deck {
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            max-width: 820px;
+            height: 140px;
+        }
+
+        .deck-card {
+            flex: 1;
+            max-width: 150px;
+            height: 130px;
+            background: var(--bg-card);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 10px;
+            padding: 12px 10px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(14px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+            position: relative;
+        }
+
+        .deck-card:hover {
+            transform: translateY(-6px);
+            border-color: var(--accent);
+            box-shadow: 0 10px 25px var(--accent-glow);
+        }
+
+        .deck-card.active {
+            transform: translateY(-10px);
+            border-color: var(--accent);
+            box-shadow: 0 14px 30px var(--accent-glow);
+            background: rgba(14, 22, 34, 0.98);
+        }
+
+        .card-meta-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-code {
+            font-size: 9px;
+            font-family: monospace;
+            color: var(--accent);
+        }
+
+        .key-badge {
+            font-size: 8px;
+            font-family: monospace;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1px 5px;
+            border-radius: 3px;
+            color: var(--text-dim);
+        }
+
+        .deck-card.active .key-badge {
+            color: #000;
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .card-icon-wrap {
+            align-self: center;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card-icon {
+            width: 24px;
+            height: 24px;
+            stroke: var(--text-dim);
+            transition: stroke 0.2s, transform 0.2s;
+        }
+
+        .deck-card:hover .card-icon,
+        .deck-card.active .card-icon {
+            stroke: var(--accent);
+            transform: scale(1.1);
+        }
+
+        .card-text-block {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            text-align: center;
+        }
+
+        .card-title {
+            font-size: 10px;
+            font-weight: 800;
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+
+        .card-desc {
+            font-size: 8px;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ---------------- ITEM 9: REDESIGNED SETTINGS CONTROL CENTER ---------------- */
+        .drawer-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .drawer-backdrop.open {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .drawer-panel {
+            position: fixed;
+            top: 0;
+            right: -450px;
+            width: 420px;
+            max-width: 92vw;
+            height: 100%;
+            background: rgba(7, 10, 15, 0.98);
+            border-left: 1px solid var(--border-glass);
+            box-shadow: -20px 0 50px rgba(0, 0, 0, 0.85);
+            z-index: 110;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: right 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow-y: auto;
+        }
+
+        .drawer-panel.open {
+            right: 0;
+        }
+
+        .drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 14px;
+            margin-bottom: 20px;
+        }
+
+        .drawer-title {
+            font-size: 13px;
+            font-weight: 900;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+
+        .drawer-close-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 22px;
+            cursor: pointer;
+        }
+
+        .drawer-close-btn:hover {
+            color: #fff;
+        }
+
+        .section-header {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.18em;
+            color: var(--accent);
+            text-transform: uppercase;
+            margin: 18px 0 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-header::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .theme-btn {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 6px;
+            padding: 8px 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-main);
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        .theme-btn:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .theme-btn.active {
+            border-color: var(--accent);
+            background: rgba(var(--accent-rgb), 0.12);
+            box-shadow: 0 0 12px var(--accent-glow);
+        }
+
+        .swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+        }
+
+        /* Sliders & Toggles */
+        .slider-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .slider-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-dim);
+        }
+
+        .zen-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none;
+        }
+
+        .zen-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        .toggle-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            font-size: 11px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 34px;
+            height: 18px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: 0.25s;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 12px;
+            width: 12px;
+            left: 3px;
+            bottom: 3px;
+            background: #fff;
+            border-radius: 50%;
+            transition: 0.25s;
+        }
+
+        input:checked + .slider {
+            background: var(--accent);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(16px);
+            background: #000;
+        }
+
+        .select-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: var(--text-main);
+            padding: 4px 8px;
+            font-size: 10px;
+            outline: none;
+        }
+
+        .select-input option {
+            background: #0d131b;
+            color: #fff;
+        }
+
+        .action-button {
+            display: block;
+            width: 100%;
+            text-align: center;
+            background: var(--accent);
+            color: #000;
+            font-weight: 800;
+            letter-spacing: 0.15em;
+            padding: 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 20px var(--accent-glow);
+            transition: all 0.2s;
+            text-transform: uppercase;
+            font-size: 11px;
+            margin-top: 16px;
+        }
+
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 25px var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. FUTURISTIC CANVAS (Particles, Grid, Lines) -->
+    <canvas id="bgCanvas"></canvas>
+    <div class="hud-radial-glow" id="hudRadialGlow"></div>
+    <div class="scanline-layer"></div>
+
+    <!-- 5 & 6. TOP STATUS BAR WITH PULSE -->
+    <header class="zen-header">
+        <div class="header-brand">
+            <div class="brand-row">
+                <div class="logo">ZEN<span>OVERLAY</span></div>
+                <div class="status-pill">
+                    <span class="pulse-dot"></span>
+                    <span>LIVE | SYSTEM ONLINE</span>
+                </div>
+            </div>
+            <div class="sys-telemetry-sub">
+                GPU: <span id="hdrGpu">PROBING...</span>
+                CPU: <span id="hdrCpu">-- THREADS</span>
+                RES: <span id="hdrRes">--</span>
+            </div>
+        </div>
+        <div class="header-status-cluster">
+            <div class="status-pill" style="border-color: rgba(255,255,255,0.1);">
+                <span id="hdrFps">120 FPS</span>
+                <span style="color: var(--text-dim);">|</span>
+                <span id="hdrFt">8.3 MS</span>
+            </div>
+            <button class="menu-btn" id="openDrawerBtn" aria-label="Open Control Center">
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN VIEWPORT -->
+    <div class="stage-container">
+        
+        <!-- 10. ZEN MINIMAL MODE PILL -->
+        <div class="zen-minimal-pill" id="zenMinimalPill" title="Click to Restore Full HUD">
+            <span class="zen-pill-dot"></span>
+            <span class="zen-pill-fps" id="pillFps">120 FPS</span>
+            <span class="zen-pill-ft" id="pillFt">8.3ms</span>
+        </div>
+
+        <!-- 2 & 3. UPGRADED MAIN FPS CARD WITH CIRCULAR GAUGE -->
+        <main class="hud-card" id="hudCard">
+            <div class="hud-card-header">
+                <span class="hud-profile-name" id="profileBadge">PROFILE 01: ESPORTS RAW TELEMETRY</span>
+                <span class="hud-gpu-tag" id="gpuLabel">PROBING GPU PIPELINE...</span>
+            </div>
+
+            <!-- Dominant Circular FPS Center -->
+            <div class="hero-fps-display">
+                <div class="fps-gauge-wrap">
+                    <svg class="gauge-svg" viewBox="0 0 146 146">
+                        <circle class="gauge-track" cx="73" cy="73" r="65"></circle>
+                        <circle class="gauge-fill" id="gaugeCircle" cx="73" cy="73" r="65"></circle>
+                    </svg>
+                    <div class="gauge-inner-data">
+                        <div class="live-tag-micro">
+                            <span class="live-tag-micro-dot"></span>
+                            <span>LIVE</span>
+                        </div>
+                        <span class="dominant-fps-num" id="dominantFps">--</span>
+                        <span class="fps-sub-label">FPS</span>
+                    </div>
+                </div>
+
+                <div class="secondary-metrics-block">
+                    <div class="metric-split-row">
+                        <div class="sub-metric-tile">
+                            <span class="sub-metric-name">1% LOW</span>
+                            <div>
+                                <span class="sub-metric-val" id="p1Low">--</span>
+                                <span class="sub-metric-unit">FPS</span>
+                            </div>
+                        </div>
+                        <div class="sub-metric-tile">
+                            <span class="sub-metric-name">FRAME TIME</span>
+                            <div>
+                                <span class="sub-metric-val" id="liveFt">--</span>
+                                <span class="sub-metric-unit">MS</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="metric-split-row">
+                        <div class="sub-metric-tile">
+                            <span class="sub-metric-name" id="aux1Name">FRAME JITTER</span>
+                            <div>
+                                <span class="sub-metric-val" id="aux1Val">--</span>
+                                <span class="sub-metric-unit" id="aux1Unit">MS</span>
+                            </div>
+                        </div>
+                        <div class="sub-metric-tile">
+                            <span class="sub-metric-name" id="aux2Name">PEAK REFRESH</span>
+                            <div>
+                                <span class="sub-metric-val" id="aux2Val">--</span>
+                                <span class="sub-metric-unit" id="aux2Unit">HZ</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7 & 8. IMPROVED GRAPH WITH 16.6ms & 8.3ms LINES AND STABILITY -->
+            <div class="graph-panel" id="graphPanel">
+                <div class="graph-top-row">
+                    <span>FRAMETIME DELTA BUFFER (100 SAMPLES)</span>
+                    <span id="targetHzIndicator">TARGET: 120Hz (8.3ms)</span>
+                </div>
+                <canvas id="frametimeCanvas"></canvas>
+
+                <div class="perf-stability-footer">
+                    <div class="stability-badge stable" id="stabilityBadge">
+                        <span>●</span>
+                        <span id="stabilityStatus">STABLE</span>
+                    </div>
+                    <div class="stability-details">
+                        AVG <strong id="avgFpsText">120 FPS</strong>
+                        &nbsp;|&nbsp;
+                        1% LOW <strong id="lowFpsText">97 FPS</strong>
+                        &nbsp;|&nbsp;
+                        <strong id="avgFtText">8.3 MS</strong>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 4. BOTTOM PRESET DECK WITH ICONS, SHORTCUTS, AND SLIDER -->
+        <div class="bottom-shelf">
+            <div class="deck-label-cluster">
+                <span class="deck-label">SELECT TELEMETRY PROFILE</span>
+            </div>
+            <div class="deck-indicator-bar">
+                <div class="deck-indicator-thumb" id="indicatorThumb"></div>
+            </div>
+
+            <nav class="card-deck">
+                <div class="deck-card active" data-mode="esports" data-index="0">
+                    <div class="card-meta-top">
+                        <span class="card-code">P.01</span>
+                        <span class="key-badge">1</span>
+                    </div>
+                    <div class="card-icon-wrap">
+                        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+                            <circle cx="12" cy="12" r="9"/>
+                            <path d="M12 3v4M12 17v4M3 12h4M17 12h4"/>
+                        </svg>
+                    </div>
+                    <div class="card-text-block">
+                        <span class="card-title">Esports Raw</span>
+                        <span class="card-desc">Max FPS & 1% Lows</span>
+                    </div>
+                </div>
+
+                <div class="deck-card" data-mode="smoothness" data-index="1">
+                    <div class="card-meta-top">
+                        <span class="card-code">P.02</span>
+                        <span class="key-badge">2</span>
+                    </div>
+                    <div class="card-icon-wrap">
+                        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+                            <path d="M3 3v18h18"/>
+                            <path d="m19 9-5 5-4-4-3 3"/>
+                        </svg>
+                    </div>
+                    <div class="card-text-block">
+                        <span class="card-title">Frametime</span>
+                        <span class="card-desc">Micro-Stutters</span>
+                    </div>
+                </div>
+
+                <div class="deck-card" data-mode="system" data-index="2">
+                    <div class="card-meta-top">
+                        <span class="card-code">P.03</span>
+                        <span class="key-badge">3</span>
+                    </div>
+                    <div class="card-icon-wrap">
+                        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+                            <rect x="4" y="4" width="16" height="16" rx="2"/>
+                            <path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/>
+                        </svg>
+                    </div>
+                    <div class="card-text-block">
+                        <span class="card-title">Hardware</span>
+                        <span class="card-desc">Cores & Memory</span>
+                    </div>
+                </div>
+
+                <div class="deck-card" data-mode="zen" data-index="3">
+                    <div class="card-meta-top">
+                        <span class="card-code">P.04</span>
+                        <span class="key-badge">4</span>
+                    </div>
+                    <div class="card-icon-wrap">
+                        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+                        </svg>
+                    </div>
+                    <div class="card-text-block">
+                        <span class="card-title">Zen Stealth</span>
+                        <span class="card-desc">Compact Floating Pill</span>
+                    </div>
+                </div>
+
+                <div class="deck-card" data-mode="benchmark" data-index="4">
+                    <div class="card-meta-top">
+                        <span class="card-code">P.05</span>
+                        <span class="key-badge">5</span>
+                    </div>
+                    <div class="card-icon-wrap">
+                        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke-width="1.8">
+                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                        </svg>
+                    </div>
+                    <div class="card-text-block">
+                        <span class="card-title">Diagnostics</span>
+                        <span class="card-desc">Deep Analytics</span>
+                    </div>
+                </div>
+            </nav>
+        </div>
+    </div>
+
+    <!-- 9. REDESIGNED CONTROL CENTER DRAWER -->
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="drawer-panel" id="drawerPanel">
+        <div>
+            <div class="drawer-header">
+                <div class="drawer-title">Control Center</div>
+                <button class="drawer-close-btn" id="closeDrawerBtn">&times;</button>
+            </div>
+
+            <!-- APPEARANCE -->
+            <div class="section-header">Appearance</div>
+            <div class="theme-grid">
+                <div class="theme-btn active" data-set-theme="cyan">
+                    <div class="swatch" style="background: #00f0ff; box-shadow: 0 0 8px #00f0ff;"></div>
+                    <span>Cyber Cyan</span>
+                </div>
+                <div class="theme-btn" data-set-theme="emerald">
+                    <div class="swatch" style="background: #00ff88; box-shadow: 0 0 8px #00ff88;"></div>
+                    <span>Viper Green</span>
+                </div>
+                <div class="theme-btn" data-set-theme="crimson">
+                    <div class="swatch" style="background: #ff2a5f; box-shadow: 0 0 8px #ff2a5f;"></div>
+                    <span>Crimson</span>
+                </div>
+                <div class="theme-btn" data-set-theme="purple">
+                    <div class="swatch" style="background: #a855f7; box-shadow: 0 0 8px #a855f7;"></div>
+                    <span>Amethyst</span>
+                </div>
+                <div class="theme-btn" data-set-theme="amber">
+                    <div class="swatch" style="background: #f59e0b; box-shadow: 0 0 8px #f59e0b;"></div>
+                    <span>Solar Gold</span>
+                </div>
+                <div class="theme-btn" data-set-theme="stealth">
+                    <div class="swatch" style="background: #ffffff; box-shadow: 0 0 8px #ffffff;"></div>
+                    <span>Monochrome</span>
+                </div>
+            </div>
+
+            <div class="slider-row">
+                <div class="slider-meta">
+                    <span>HUD Opacity</span>
+                    <span id="lblOpacity">88%</span>
+                </div>
+                <input type="range" class="zen-slider" id="sliderOpacity" min="40" max="100" value="88">
+            </div>
+
+            <div class="slider-row">
+                <div class="slider-meta">
+                    <span>Glow Strength</span>
+                    <span id="lblGlow">1.0x</span>
+                </div>
+                <input type="range" class="zen-slider" id="sliderGlow" min="0" max="20" value="10">
+            </div>
+
+            <!-- DISPLAY -->
+            <div class="section-header">Display</div>
+            <div class="toggle-row">
+                <span>FPS Circular Gauge</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggleGauge" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="toggle-row">
+                <span>Frametime Graph</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggleGraph" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="toggle-row">
+                <span>3D Gyro Perspective Tilt</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggleTilt" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="toggle-row">
+                <span>Background Animated Grid</span>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggleGrid" checked>
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <!-- TELEMETRY -->
+            <div class="section-header">Telemetry Engine</div>
+            <div class="toggle-row">
+                <span>Sample Polling Rate</span>
+                <select class="select-input" id="selRate">
+                    <option value="16">Fast (16ms / Realtime)</option>
+                    <option value="50" selected>Balanced (50ms)</option>
+                    <option value="100">Low Overhead (100ms)</option>
+                </select>
+            </div>
+            <div class="toggle-row">
+                <span>Graph Sample Depth</span>
+                <select class="select-input" id="selSamples">
+                    <option value="60">60 Samples</option>
+                    <option value="100" selected>100 Samples</option>
+                    <option value="150">150 Samples</option>
+                </select>
+            </div>
+            <div class="toggle-row">
+                <span>1% Low Calculation</span>
+                <select class="select-input" id="selLowMode">
+                    <option value="0.05" selected>Strict 5th Percentile</option>
+                    <option value="0.01">True 1st Percentile</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <button class="action-button" id="exportCsvBtn">Export Real Frame Log (.CSV)</button>
+        </div>
+    </aside>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            /* -------------------------------------------------------------
+             * 1. CANVAS INITIALIZATIONS & BACKGROUND PARTICLES
+             * -----------------------------------------------------------*/
+            const bgCanvas = document.getElementById('bgCanvas');
+            const bgCtx = bgCanvas.getContext('2d');
+            let bgParticles = [];
+            let showBackgroundGrid = true;
+
+            function resizeBgCanvas() {
+                bgCanvas.width = window.innerWidth * window.devicePixelRatio;
+                bgCanvas.height = window.innerHeight * window.devicePixelRatio;
+                bgCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+                initParticles();
+            }
+
+            function initParticles() {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                bgParticles = Array.from({ length: 45 }, () => ({
+                    x: Math.random() * w,
+                    y: Math.random() * h,
+                    size: Math.random() * 1.6 + 0.6,
+                    speed: Math.random() * 0.35 + 0.15,
+                    alpha: Math.random() * 0.4 + 0.1
+                }));
+            }
+
+            window.addEventListener('resize', resizeBgCanvas);
+            resizeBgCanvas();
+
+            let gridOffset = 0;
+            function renderBackground() {
+                const w = window.innerWidth;
+                const h = window.innerHeight;
+                bgCtx.clearRect(0, 0, w, h);
+
+                if (showBackgroundGrid) {
+                    // Moving perspective grid lines
+                    gridOffset = (gridOffset + 0.25) % 40;
+                    bgCtx.strokeStyle = "rgba(255, 255, 255, 0.018)";
+                    bgCtx.lineWidth = 1;
+
+                    for (let x = 0; x < w; x += 50) {
+                        bgCtx.beginPath();
+                        bgCtx.moveTo(x, 0);
+                        bgCtx.lineTo(x, h);
+                        bgCtx.stroke();
+                    }
+                    for (let y = gridOffset; y < h; y += 40) {
+                        bgCtx.beginPath();
+                        bgCtx.moveTo(0, y);
+                        bgCtx.lineTo(w, y);
+                        bgCtx.stroke();
+                    }
+                }
+
+                // Subtle glowing floating particles
+                const accentRgb = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || "0, 240, 255";
+                bgParticles.forEach(p => {
+                    bgCtx.fillStyle = `rgba(${accentRgb}, ${p.alpha})`;
+                    bgCtx.beginPath();
+                    bgCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    bgCtx.fill();
+
+                    p.y -= p.speed;
+                    if (p.y < 0) {
+                        p.y = h;
+                        p.x = Math.random() * w;
+                    }
+                });
+
+                requestAnimationFrame(renderBackground);
+            }
+            requestAnimationFrame(renderBackground);
+
+            /* -------------------------------------------------------------
+             * 2. FRAMETIME GRAPH CANVAS WITH 16.6ms & 8.3ms GUIDELINES
+             * -----------------------------------------------------------*/
+            const ftCanvas = document.getElementById('frametimeCanvas');
+            const ftCtx = ftCanvas.getContext('2d');
+            let maxSamples = 100;
+            let rollingDeltas = new Array(maxSamples).fill(16.6);
+
+            function resizeFtCanvas() {
+                ftCanvas.width = ftCanvas.clientWidth * window.devicePixelRatio;
+                ftCanvas.height = ftCanvas.clientHeight * window.devicePixelRatio;
+                ftCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            }
+            window.addEventListener('resize', resizeFtCanvas);
+            resizeFtCanvas();
+
+            function renderFrametimeGraph() {
+                if (!ftCanvas || !ftCtx) return;
+                const w = ftCanvas.clientWidth;
+                const h = ftCanvas.clientHeight;
+                ftCtx.clearRect(0, 0, w, h);
+
+                const maxBound = 33.3; // 30fps threshold boundary
+
+                // 16.6ms (60Hz) reference line
+                const y16 = h - (16.6 / maxBound) * h;
+                ftCtx.strokeStyle = "rgba(245, 158, 11, 0.25)";
+                ftCtx.setLineDash([4, 4]);
+                ftCtx.lineWidth = 1;
+                ftCtx.beginPath();
+                ftCtx.moveTo(0, y16);
+                ftCtx.lineTo(w, y16);
+                ftCtx.stroke();
+
+                // 8.3ms (120Hz) reference line
+                const y8 = h - (8.33 / maxBound) * h;
+                ftCtx.strokeStyle = "rgba(0, 255, 136, 0.25)";
+                ftCtx.beginPath();
+                ftCtx.moveTo(0, y8);
+                ftCtx.lineTo(w, y8);
+                ftCtx.stroke();
+                ftCtx.setLineDash([]); // Reset dash
+
+                // Text labels on graph
+                ftCtx.font = "8px monospace";
+                ftCtx.fillStyle = "rgba(255, 255, 255, 0.25)";
+                ftCtx.fillText("16.6ms", 4, y16 - 3);
+                ftCtx.fillText("8.3ms", 4, y8 - 3);
+
+                // Build Gradient Area Fill
+                const currentAccent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || "#00f0ff";
+                const accentRgb = getComputedStyle(document.documentElement).getPropertyValue('--accent-rgb').trim() || "0, 240, 255";
+                
+                const grad = ftCtx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, `rgba(${accentRgb}, 0.25)`);
+                grad.addColorStop(1, `rgba(${accentRgb}, 0.0)`);
+
+                const step = w / (rollingDeltas.length - 1);
+
+                // Area Fill Path
+                ftCtx.beginPath();
+                rollingDeltas.forEach((val, i) => {
+                    const clamped = Math.min(Math.max(val, 0), maxBound);
+                    const y = h - (clamped / maxBound) * h;
+                    if (i === 0) ftCtx.moveTo(0, y);
+                    else ftCtx.lineTo(i * step, y);
+                });
+                ftCtx.lineTo(w, h);
+                ftCtx.lineTo(0, h);
+                ftCtx.closePath();
+                ftCtx.fillStyle = grad;
+                ftCtx.fill();
+
+                // Main Curve Stroke with Spikes highlighted
+                ftCtx.beginPath();
+                ftCtx.strokeStyle = currentAccent;
+                ftCtx.lineWidth = 1.6;
+                rollingDeltas.forEach((val, i) => {
+                    const clamped = Math.min(Math.max(val, 0), maxBound);
+                    const y = h - (clamped / maxBound) * h;
+                    if (i === 0) ftCtx.moveTo(0, y);
+                    else ftCtx.lineTo(i * step, y);
+                });
+                ftCtx.stroke();
+
+                // Highlight stutter spikes > 22ms
+                rollingDeltas.forEach((val, i) => {
+                    if (val > 22) {
+                        const x = i * step;
+                        const y = h - (Math.min(val, maxBound) / maxBound) * h;
+                        ftCtx.fillStyle = "#ff2a5f";
+                        ftCtx.beginPath();
+                        ftCtx.arc(x, y, 3, 0, Math.PI * 2);
+                        ftCtx.fill();
+                    }
+                });
+            }
+
+            /* -------------------------------------------------------------
+             * 3. REAL HARDWARE SENSOR PROBING
+             * -----------------------------------------------------------*/
+            function probeHardware() {
+                let gpu = "DirectX Hardware Pipe";
+                try {
+                    const canvas = document.createElement("canvas");
+                    const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+                    if (gl) {
+                        const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+                        if (debugInfo) {
+                            gpu = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                        }
+                    }
+                } catch (e) {
+                    gpu = "Accelerated GPU Bus";
+                }
+
+                const cores = navigator.hardwareConcurrency || 4;
+                const ram = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : "Available Pool";
+                const res = `${window.screen.width}x${window.screen.height}`;
+                return { gpu, cores, ram, res };
+            }
+
+            const hw = probeHardware();
+            document.getElementById('gpuLabel').textContent = hw.gpu;
+            document.getElementById('hdrGpu').textContent = hw.gpu;
+            document.getElementById('hdrCpu').textContent = `${hw.cores} THREADS`;
+            document.getElementById('hdrRes').textContent = hw.res;
+
+            /* -------------------------------------------------------------
+             * 4. REAL CLIENT FPS & STABILITY ENGINE
+             * -----------------------------------------------------------*/
+            let frameBuffer = [];
+            let lastTime = performance.now();
+            let liveFps = 0;
+            let liveFrametime = 0;
+            let p1Low = 0;
+            let peakHz = 0;
+            let lowPercentile = 0.05;
+
+            function processFrameMetrics(now) {
+                const delta = now - lastTime;
+                lastTime = now;
+
+                if (delta > 0) {
+                    liveFrametime = delta;
+                    const instantFps = 1000 / delta;
+
+                    frameBuffer.push(instantFps);
+                    if (frameBuffer.length > 60) frameBuffer.shift();
+
+                    const avg = frameBuffer.reduce((a, b) => a + b, 0) / frameBuffer.length;
+                    liveFps = Math.round(avg);
+                    if (liveFps > peakHz) peakHz = liveFps;
+
+                    const sorted = [...frameBuffer].sort((a, b) => a - b);
+                    const lowIdx = Math.max(0, Math.floor(sorted.length * lowPercentile));
+                    p1Low = Math.round(sorted[lowIdx] || liveFps * 0.9);
+
+                    rollingDeltas.push(delta);
+                    if (rollingDeltas.length > maxSamples) rollingDeltas.shift();
+                }
+
+                renderFrametimeGraph();
+                requestAnimationFrame(processFrameMetrics);
+            }
+            requestAnimationFrame(processFrameMetrics);
+
+            /* -------------------------------------------------------------
+             * 5. HUD DOM & CIRCULAR GAUGE REACTIVE UPDATE
+             * -----------------------------------------------------------*/
+            const gaugeCircle = document.getElementById('gaugeCircle');
+            const dominantFps = document.getElementById('dominantFps');
+            const p1LowEl = document.getElementById('p1Low');
+            const liveFtEl = document.getElementById('liveFt');
+            const hdrFps = document.getElementById('hdrFps');
+            const hdrFt = document.getElementById('hdrFt');
+            const pillFps = document.getElementById('pillFps');
+            const pillFt = document.getElementById('pillFt');
+
+            const stabilityBadge = document.getElementById('stabilityBadge');
+            const stabilityStatus = document.getElementById('stabilityStatus');
+            const avgFpsText = document.getElementById('avgFpsText');
+            const lowFpsText = document.getElementById('lowFpsText');
+            const avgFtText = document.getElementById('avgFtText');
+
+            let pollingRate = 50;
+
+            function updateHudDom() {
+                dominantFps.textContent = liveFps;
+                p1LowEl.textContent = p1Low;
+                liveFtEl.textContent = liveFrametime.toFixed(1);
+
+                hdrFps.textContent = `${liveFps} FPS`;
+                hdrFt.textContent = `${liveFrametime.toFixed(1)} MS`;
+                pillFps.textContent = `${liveFps} FPS`;
+                pillFt.textContent = `${liveFrametime.toFixed(1)}ms`;
+
+                avgFpsText.textContent = `${liveFps} FPS`;
+                lowFpsText.textContent = `${p1Low} FPS`;
+                avgFtText.textContent = `${liveFrametime.toFixed(1)} MS`;
+
+                // Gauge Stroke Reaction (Map 0 - 240+ FPS to 408 circumference)
+                const maxRefFps = Math.max(peakHz, 120);
+                const progressRatio = Math.min(liveFps / maxRefFps, 1);
+                const strokeOffset = 408 - (408 * progressRatio);
+                gaugeCircle.style.strokeDashoffset = strokeOffset;
+
+                // Dynamic Jitter & Stability Evaluation
+                const theoreticalFt = 1000 / (liveFps || 60);
+                const jitter = Math.abs(liveFrametime - theoreticalFt);
+
+                document.getElementById('aux1Val').textContent = jitter.toFixed(2);
+                document.getElementById('aux2Val').textContent = peakHz;
+
+                if (jitter < 2.0) {
+                    stabilityBadge.className = "stability-badge stable";
+                    stabilityStatus.textContent = "STABLE";
+                } else if (jitter < 6.0) {
+                    stabilityBadge.className = "stability-badge warning";
+                    stabilityStatus.textContent = "WARNING";
+                } else {
+                    stabilityBadge.className = "stability-badge critical";
+                    stabilityStatus.textContent = "CRITICAL";
+                }
+            }
+
+            let domInterval = setInterval(updateHudDom, pollingRate);
+
+            /* -------------------------------------------------------------
+             * 6. PRESET DECK, INDICATOR & SHORTCUT KEYS (1 - 5)
+             * -----------------------------------------------------------*/
+            const deckCards = document.querySelectorAll('.deck-card');
+            const indicatorThumb = document.getElementById('indicatorThumb');
+            const hudCard = document.getElementById('hudCard');
+            const zenMinimalPill = document.getElementById('zenMinimalPill');
+            const profileBadge = document.getElementById('profileBadge');
+
+            const profileTitles = [
+                "PROFILE 01: ESPORTS RAW TELEMETRY",
+                "PROFILE 02: FRAMETIME STUTTER & CONSISTENCY",
+                "PROFILE 03: CLIENT ENGINE & HARDWARE",
+                "PROFILE 04: ZEN STEALTH MINIMAL PILL",
+                "PROFILE 05: RUNTIME DIAGNOSTICS MATRIX"
+            ];
+
+            function activatePreset(index) {
+                deckCards.forEach(c => c.classList.remove('active'));
+                const targetCard = deckCards[index];
+                if (!targetCard) return;
+
+                targetCard.classList.add('active');
+                indicatorThumb.style.transform = `translateX(${index * 100}%)`;
+                profileBadge.textContent = profileTitles[index];
+
+                // Zen Stealth Mode Toggle
+                if (index === 3) {
+                    hudCard.style.display = 'none';
+                    zenMinimalPill.style.display = 'flex';
+                } else {
+                    hudCard.style.display = 'block';
+                    zenMinimalPill.style.display = 'none';
+                }
+            }
+
+            deckCards.forEach(card => {
+                card.addEventListener('click', () => {
+                    const idx = parseInt(card.dataset.index, 10);
+                    activatePreset(idx);
+                });
+            });
+
+            zenMinimalPill.addEventListener('click', () => {
+                activatePreset(0); // Restore to esports preset
+            });
+
+            // Keyboard Shortcuts (1, 2, 3, 4, 5)
+            window.addEventListener('keydown', (e) => {
+                const key = e.key;
+                if (['1', '2', '3', '4', '5'].includes(key)) {
+                    activatePreset(parseInt(key, 10) - 1);
+                }
+            });
+
+            /* -------------------------------------------------------------
+             * 7. SETTINGS CONTROL CENTER DRAWER & THEME SYSTEM
+             * -----------------------------------------------------------*/
+            const openDrawerBtn = document.getElementById('openDrawerBtn');
+            const closeDrawerBtn = document.getElementById('closeDrawerBtn');
+            const drawerBackdrop = document.getElementById('drawerBackdrop');
+            const drawerPanel = document.getElementById('drawerPanel');
+            const themeButtons = document.querySelectorAll('.theme-btn');
+
+            function toggleDrawer(open) {
+                drawerBackdrop.classList.toggle('open', open);
+                drawerPanel.classList.toggle('open', open);
+            }
+
+            openDrawerBtn.addEventListener('click', () => toggleDrawer(true));
+            closeDrawerBtn.addEventListener('click', () => toggleDrawer(false));
+            drawerBackdrop.addEventListener('click', () => toggleDrawer(false));
+
+            function applyTheme(name) {
+                document.documentElement.setAttribute('data-theme', name);
+                try { localStorage.setItem('zen_theme', name); } catch(e){}
+                themeButtons.forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.setTheme === name);
+                });
+            }
+
+            const savedTheme = localStorage.getItem('zen_theme') || 'cyan';
+            applyTheme(savedTheme);
+
+            themeButtons.forEach(btn => {
+                btn.addEventListener('click', () => applyTheme(btn.dataset.setTheme));
+            });
+
+            // Sliders: Opacity & Glow
+            const sliderOpacity = document.getElementById('sliderOpacity');
+            sliderOpacity.addEventListener('input', () => {
+                const val = sliderOpacity.value / 100;
+                document.documentElement.style.setProperty('--hud-opacity', val);
+                document.getElementById('lblOpacity').textContent = `${sliderOpacity.value}%`;
+            });
+
+            const sliderGlow = document.getElementById('sliderGlow');
+            sliderGlow.addEventListener('input', () => {
+                const mult = sliderGlow.value / 10;
+                document.documentElement.style.setProperty('--glow-mult', mult);
+                document.getElementById('lblGlow').textContent = `${mult.toFixed(1)}x`;
+            });
+
+            // Toggles
+            const toggleGauge = document.getElementById('toggleGauge');
+            toggleGauge.addEventListener('change', () => {
+                document.querySelector('.fps-gauge-wrap').style.display = toggleGauge.checked ? 'flex' : 'none';
+            });
+
+            const toggleGraph = document.getElementById('toggleGraph');
+            const graphPanel = document.getElementById('graphPanel');
+            toggleGraph.addEventListener('change', () => {
+                graphPanel.style.display = toggleGraph.checked ? 'block' : 'none';
+            });
+
+            const toggleGrid = document.getElementById('toggleGrid');
+            toggleGrid.addEventListener('change', () => {
+                showBackgroundGrid = toggleGrid.checked;
+            });
+
+            // 3D Perspective Tilt
+            const toggleTilt = document.getElementById('toggleTilt');
+            window.addEventListener('mousemove', (e) => {
+                if (!toggleTilt.checked || hudCard.style.display === 'none') {
+                    hudCard.style.transform = 'none';
+                    return;
+                }
+                const cx = window.innerWidth / 2;
+                const cy = window.innerHeight / 2;
+                const tiltX = -((e.clientY - cy) / cy) * 6;
+                const tiltY = ((e.clientX - cx) / cx) * 8;
+                hudCard.style.transform = `rotateX(${tiltX}deg) rotateY(${tiltY}deg)`;
+            });
+
+            // Telemetry Selectors
+            document.getElementById('selRate').addEventListener('change', (e) => {
+                clearInterval(domInterval);
+                pollingRate = parseInt(e.target.value, 10);
+                domInterval = setInterval(updateHudDom, pollingRate);
+            });
+
+            document.getElementById('selSamples').addEventListener('change', (e) => {
+                maxSamples = parseInt(e.target.value, 10);
+                rollingDeltas = new Array(maxSamples).fill(16.6);
+            });
+
+            document.getElementById('selLowMode').addEventListener('change', (e) => {
+                lowPercentile = parseFloat(e.target.value);
+            });
+
+            // CSV Benchmark Export
+            document.getElementById('exportCsvBtn').addEventListener('click', () => {
+                let csv = "Sample,FrameDelta_ms,Instant_FPS\n";
+                rollingDeltas.forEach((dt, i) => {
+                    csv += `${i + 1},${dt.toFixed(2)},${(1000 / dt).toFixed(1)}\n`;
+                });
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ZenOverlay_Log_${Date.now()}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        });
+    </script>
+</body>
+</html>
